@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "target": "ES2022"
+  },
+  "include": ["static/**/*", "types/**/*"],
+  "exclude": ["server/**/*", "node_modules"]
+}

@@ -1,0 +1,4 @@
+{
+  "livePreview.defaultPreviewPath": "static/index.html",
+  "deno.enablePaths": ["./server"]
+}

@@ -1,0 +1,38 @@
+<html>
+  <head>
+    <script type="module" src="index.ts"></script>
+    <style>
+      html,
+      body {
+        font-size: 24px;
+      }
+
+      input,
+      button {
+        font-size: inherit;
+      }
+
+    </style>
+  </head>
+  <body>
+    <fieldset>
+      <button type="button" id="start-hrm">HRM</button>
+      <input type="number" id="hrm-feedback" />
+    </fieldset>
+    <fieldset>
+      <button type="button" id="start-power">Power</button>
+      <input type="number" id="power-feedback" />
+      <input type="number" id="power-cadence-feedback" />
+    </fieldset>
+    <fieldset>
+      <button type="button" id="start-ftms">FTMS</button>
+      <input type="number" id="ftms-power-feedback" placeholder="power" />
+      <input type="number" id="ftms-cadence-feedback" placeholder="cadence" />
+      <input type="number" id="ftms-speed-feedback" placeholder="speed" />
+    </fieldset>
+    <fieldset>
+      <button type="button" id="start-steering">Steering</button>
+      <input type="number" id="steering-feedback" />
+    </fieldset>
+  </body>
+</html>
