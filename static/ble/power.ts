@@ -4,9 +4,10 @@ import {
   ReadableGATTCharacteristicGateway,
   GATTCharacteristicGatewayDerived,
   GATTServiceGateway,
-  DecodedMessage,
   parseFlags,
 } from './common.js';
+
+import { BaseDecodedMessage } from './types.js';
 
 const cyclingPowerMeasurementFlagDefs = {
   pedalPowerBalancePresent: { index: 0, parser: booleanParser },
@@ -61,8 +62,9 @@ type PowerValue = PowerFlags & {
 };
 
 export type PowerMessage = {
+  type: typeof CyclingPowerMeasurementGateway.characteristicId;
   value: PowerValue;
-} & DecodedMessage;
+} & BaseDecodedMessage;
 
 export class CyclingPowerServiceGateway extends GATTServiceGateway {
   static serviceId = 'cycling_power';
@@ -104,40 +106,30 @@ export class CyclingPowerMeasurementGateway extends ReadableGATTCharacteristicGa
 
     const instantaneousPower = reader.readInt16();
 
-    let pedalPowerBalance: number | undefined = undefined;
-    if (pedalPowerBalancePresent) {
-      pedalPowerBalance = reader.readUint8() / 2;
-    }
-
-    let accumulatedTorque: number | undefined = undefined;
-    if (accumulatedTorquePresent) {
-      accumulatedTorque = reader.readUint16() / 32;
-    }
-
-    let numCompleteWheelRevolutions: number | undefined = undefined;
-    let lastWheelEventTime: number | undefined;
-    if (wheelRevolutionDataPresent) {
-      numCompleteWheelRevolutions = reader.readUint32();
-      lastWheelEventTime = reader.readUint16() / 2048;
-    }
-
-    let numCompleteCrankRevolutions: number | undefined = undefined;
-    let lastCrankEventTime: number | undefined;
-    if (crankRevolutionDataPresent) {
-      numCompleteCrankRevolutions = reader.readUint16();
-      lastCrankEventTime = reader.readUint16() / 1024;
-    }
-
-    return {
+    const value: PowerValue = {
       ...flags,
       instantaneousPower,
-      pedalPowerBalance,
-      accumulatedTorque,
-      numCompleteWheelRevolutions,
-      lastWheelEventTime,
-      numCompleteCrankRevolutions,
-      lastCrankEventTime,
     };
+
+    if (pedalPowerBalancePresent) {
+      value.pedalPowerBalance = reader.readUint8() / 2;
+    }
+
+    if (accumulatedTorquePresent) {
+      value.accumulatedTorque = reader.readUint16() / 32;
+    }
+
+    if (wheelRevolutionDataPresent) {
+      value.numCompleteWheelRevolutions = reader.readUint32();
+      value.lastWheelEventTime = reader.readUint16() / 2048;
+    }
+
+    if (crankRevolutionDataPresent) {
+      value.numCompleteCrankRevolutions = reader.readUint16();
+      value.lastCrankEventTime = reader.readUint16() / 1024;
+    }
+
+    return value;
   }
 
   constructor(characteristic: BluetoothRemoteGATTCharacteristic) {

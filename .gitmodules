@@ -1,0 +1,3 @@
+[submodule "static/lib/cbor-x"]
+	path = static/lib/cbor-x
+	url = https://github.com/chen-ye/cbor-x.git

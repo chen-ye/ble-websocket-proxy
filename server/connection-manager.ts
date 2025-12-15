@@ -1,8 +1,13 @@
-export class WebSocketManager {
+import { iterateReader } from './deps.ts';
+import { cborToBeamNG } from './beamng.ts';
+import { beamNGToCbor } from './beamng.ts';
+
+export class ConnectionManager {
   bleConnections: Set<WebSocketP> = new Set();
   gameConnections: Set<WebSocketP> = new Set();
   rawBleConnections: Map<string, WebSocketP> = new Map();
   rawGameConnections: Map<string, WebSocketP> = new Map();
+  beamNGConnections: Set<Deno.Conn> = new Set();
 
   constructor() {
     this._handleBleMessage = this._handleBleMessage.bind(this);
@@ -57,10 +62,35 @@ export class WebSocketManager {
     });
   }
 
-  _handleBleMessage(evt: MessageEvent) {
+  async addBeamNGConnection(conn: Deno.Conn) {
+    this.beamNGConnections.add(conn);
+    try {
+      const reader = iterateReader(conn, { bufSize: 4096 });
+      for await (const chunk of reader) {
+        this._handleBeamNGMessage(chunk);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async _handleBeamNGMessage(chunk: Uint8Array) {
+    const messages = beamNGToCbor(chunk);
+    for (const message of messages) {
+      for (const bleConnection of this.bleConnections) {
+        bleConnection.ws.send(message);
+      }
+    }
+  }
+
+  async _handleBleMessage(evt: MessageEvent) {
     for (const gameConnection of this.gameConnections) {
       gameConnection.ws.send(evt.data);
     }
+    const beamNGData = cborToBeamNG(evt.data);
+    await Promise.allSettled(
+      [...this.beamNGConnections].map((conn) => conn.write(beamNGData)),
+    );
   }
 
   _handleGameMessage(evt: MessageEvent) {

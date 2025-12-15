@@ -1,8 +1,10 @@
-type FlagDefinition<FlagType extends number | boolean> = {
-  index: number;
-  mask?: number;
-  parser?: (value: number) => FlagType;
-};
+import { makeFloat64 as double } from './../cbor.js';
+import {
+  BaseDecodedMessage,
+  BaseDecodedValue,
+  DecodedCharacteristicValueChangedEventDetail,
+  FlagDefinition,
+} from './types.js';
 
 export const identityParser = (value: number) => value;
 export const booleanParser = (value: number) => !!value;
@@ -87,23 +89,8 @@ export abstract class GATTServiceGateway {
   }
 }
 
-type DecodedValue = {
-  [key: string]: any;
-};
-
-export type DecodedMessage = {
-  type: string;
-  timeStamp: number;
-  value: DecodedValue;
-};
-
-type DecodedCharacteristicValueChangedEventDetail<T extends DecodedMessage> = {
-  characteristic: BluetoothRemoteGATTCharacteristic;
-  message: T;
-};
-
 export class DecodedCharacteristicValueChangedEvent<
-  T extends DecodedMessage,
+  T extends BaseDecodedMessage,
 > extends CustomEvent<DecodedCharacteristicValueChangedEventDetail<T>> {
   static type = 'decodedcharacteristicvaluechanged';
 
@@ -130,6 +117,7 @@ export abstract class GATTCharacteristicGateway extends EventTarget {
   ) {
     super();
     this.characteristicId = characteristicId;
+    this.characteristicLabel = characteristicLabel;
     this.characteristic = characteristic;
   }
 }
@@ -169,9 +157,9 @@ export abstract class ReadableGATTCharacteristicGateway extends GATTCharacterist
     );
   }
 
-  abstract decodeValue(dataView: DataView): DecodedValue;
+  abstract decodeValue(dataView: DataView): BaseDecodedValue;
 
-  async readDecodedValue(): Promise<DecodedValue> {
+  async readDecodedValue(): Promise<BaseDecodedValue> {
     const dataView = await this.characteristic.readValue();
     return this.decodeValue(dataView);
   }
@@ -183,7 +171,7 @@ export abstract class ReadableGATTCharacteristicGateway extends GATTCharacterist
     this.dispatchEvent(
       new DecodedCharacteristicValueChangedEvent(this.characteristic, {
         type: this.characteristicLabel ?? this.characteristicId,
-        timeStamp,
+        timeStamp: double(timeStamp),
         value: parsed,
       }),
     );

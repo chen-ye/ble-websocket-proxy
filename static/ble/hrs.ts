@@ -4,10 +4,11 @@ import {
   ReadableGATTCharacteristicGateway,
   CharacteristicValueChangedEvent,
   GATTCharacteristicGatewayDerived,
-  DecodedMessage,
   booleanParser,
   DataViewReader,
 } from './common.js';
+
+import { BaseDecodedMessage } from './types.js';
 
 const heartRateMeasurementFlagDefs = {
   hrvFormat: { index: 0 },
@@ -49,8 +50,9 @@ type HasEnergyExpended = {
 type HRMValue = (HasEnergyExpended | NoEnergyExpended) & HRMBaseValue;
 
 export type HRMMessage = {
+  type: typeof HeartRateMeasurementGateway.characteristicId;
   value: HRMValue;
-} & DecodedMessage;
+} & BaseDecodedMessage;
 
 export class HRSGateway extends GATTServiceGateway {
   static serviceId = 'heart_rate';
@@ -84,25 +86,19 @@ export class HeartRateMeasurementGateway extends ReadableGATTCharacteristicGatew
         ? reader.readUint16()
         : reader.readUint8();
 
-    let energyExpended: number | undefined = undefined;
-    if (energyExpendedPresent) {
-      energyExpended = reader.readUint16();
-    }
+    const value: HRMValue = {
+      ...flags,
+      heartRateValue,
+    } as HRMValue; //TODO: fix this
 
-    const rrIntervals: number[] = [];
     if (rrIntervalPresent) {
+      value.rrIntervals = [];
       while (reader.byteIndex + 1 < dataView.byteLength) {
-        rrIntervals.push(reader.readUint16());
+        value.rrIntervals.push(reader.readUint16());
       }
     }
 
-    const parsed: HRMBaseValue = {
-      ...flags,
-      heartRateValue,
-      energyExpended,
-      rrIntervals,
-    };
-    return parsed as HRMValue;
+    return value;
   }
 
   constructor(characteristic: BluetoothRemoteGATTCharacteristic) {

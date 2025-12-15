@@ -5,11 +5,12 @@ import {
   GATTCharacteristicGatewayDerived,
   GATTServiceGateway,
   invBooleanParser,
-  DecodedMessage,
   parseFlags,
   WriteableGATTCharacteristicGateway,
   DataViewWriter,
 } from './common.js';
+import { BaseDecodedMessage } from './types.js';
+import { makeFloat64 as double } from './../cbor.js';
 
 const indoorBikeDataFlagDefs = {
   instantaneousSpeedPresent: { index: 0, parser: invBooleanParser },
@@ -62,8 +63,9 @@ type IndoorBikeValue = IndoorBikeFlags & {
 };
 
 export type IndoorBikeDataMessage = {
+  type: typeof IndoorBikeDataGateway.characteristicId;
   value: IndoorBikeValue;
-} & DecodedMessage;
+} & BaseDecodedMessage;
 
 export class FTMSServiceGateway extends GATTServiceGateway {
   static serviceId = 'fitness_machine';
@@ -118,99 +120,71 @@ export class IndoorBikeDataGateway extends ReadableGATTCharacteristicGateway {
       remainingTimePresent,
     } = flags;
 
-    let instantaneousSpeed: number | undefined = undefined;
-    if (instantaneousSpeedPresent) {
-      instantaneousSpeed = reader.readUint16() * 0.01;
-    }
-
-    let averageSpeed: number | undefined = undefined;
-    if (averageSpeedPresent) {
-      averageSpeed = reader.readUint16() * 0.01;
-    }
-
-    let instantaneousCadence: number | undefined = undefined;
-    if (instantaneousCadencePresent) {
-      instantaneousCadence = reader.readUint16() / 2;
-    }
-
-    let averageCadence: number | undefined = undefined;
-    if (averageCadencePresent) {
-      averageCadence = reader.readUint16() / 2;
-    }
-
-    let totalDistance: number | undefined = undefined;
-    if (totalDistancePresent) {
-      totalDistance = reader.readUint32();
-    }
-
-    let resistanceLevel: number | undefined = undefined;
-    if (resistanceLevelPresent) {
-      resistanceLevel = reader.readUint16();
-    }
-
-    let instantaneousPower: number | undefined = undefined;
-    if (instantaneousPowerPresent) {
-      instantaneousPower = reader.readUint16();
-    }
-
-    let averagePower: number | undefined = undefined;
-    if (averagePowerPresent) {
-      averagePower = reader.readUint16();
-    }
-
-    let totalEnergy: number | undefined = undefined;
-    if (expendedEnergyPresent) {
-      totalEnergy = reader.readInt16();
-    }
-
-    let energyPerHour: number | undefined = undefined;
-    if (expendedEnergyPresent) {
-      energyPerHour = reader.readInt16();
-    }
-
-    let energyPerMinute: number | undefined = undefined;
-    if (expendedEnergyPresent) {
-      energyPerMinute = reader.readUint8();
-    }
-
-    let heartRate: number | undefined = undefined;
-    if (heartRatePresent) {
-      heartRate = reader.readUint16();
-    }
-
-    let metabolicEquivalent: number | undefined = undefined;
-    if (metabolicEquivalentPresent) {
-      metabolicEquivalent = reader.readUint8();
-    }
-
-    let elapsedTime: number | undefined = undefined;
-    if (elapsedTimePresent) {
-      elapsedTime = reader.readUint16();
-    }
-
-    let remainingTime: number | undefined = undefined;
-    if (remainingTimePresent) {
-      remainingTime = reader.readUint16();
-    }
-
-    return {
+    const value: IndoorBikeValue = {
       ...flags,
-      instantaneousSpeed,
-      averageSpeed,
-      instantaneousCadence,
-      averageCadence,
-      totalDistance,
-      resistanceLevel,
-      instantaneousPower,
-      averagePower,
-      totalEnergy,
-      energyPerHour,
-      energyPerMinute,
-      heartRate,
-      metabolicEquivalent,
-      elapsedTime,
-      remainingTime,
     };
+
+    if (instantaneousSpeedPresent) {
+      value.instantaneousSpeed = double(reader.readUint16() * 0.01);
+    }
+
+    if (averageSpeedPresent) {
+      value.averageSpeed = double(reader.readUint16() * 0.01);
+    }
+
+    if (instantaneousCadencePresent) {
+      value.instantaneousCadence = double(reader.readUint16() / 2);
+    }
+
+    if (averageCadencePresent) {
+      value.averageCadence = reader.readUint16() / 2;
+    }
+
+    if (totalDistancePresent) {
+      value.totalDistance = reader.readUint32();
+    }
+
+    if (resistanceLevelPresent) {
+      value.resistanceLevel = reader.readUint16();
+    }
+
+    if (instantaneousPowerPresent) {
+      value.instantaneousPower = reader.readUint16();
+    }
+
+    if (averagePowerPresent) {
+      value.averagePower = reader.readUint16();
+    }
+
+    if (expendedEnergyPresent) {
+      value.totalEnergy = reader.readInt16();
+    }
+
+    if (expendedEnergyPresent) {
+      value.energyPerHour = reader.readInt16();
+    }
+
+    if (expendedEnergyPresent) {
+      value.energyPerMinute = reader.readUint8();
+    }
+
+    if (heartRatePresent) {
+      value.heartRate = reader.readUint16();
+    }
+
+    if (metabolicEquivalentPresent) {
+      value.metabolicEquivalent = reader.readUint8();
+    }
+
+    if (elapsedTimePresent) {
+      value.elapsedTime = reader.readUint16();
+    }
+
+    if (remainingTimePresent) {
+      value.remainingTime = reader.readUint16();
+    }
+
+    return value;
   }
 
   constructor(characteristic: BluetoothRemoteGATTCharacteristic) {
@@ -299,17 +273,26 @@ export class FitnessMachineControlPointGateway extends WriteableGATTCharacterist
     );
   }
 
-  setIndoorBikeSimulationParameters({
-    windSpeed,
-    grade,
-    rollingResistance,
-    windResistance,
-  }: {
-    windSpeed: number;
-    grade: number;
-    rollingResistance: number;
-    windResistance: number;
-  }) {
+  setIndoorBikeSimulationParameters(
+    data: Partial<{
+      windSpeed: number;
+      grade: number;
+      rollingResistance: number;
+      windResistance: number;
+    }>,
+  ) {
+    const defaults = {
+      windSpeed: 0,
+      grade: 0,
+      rollingResistance: 0,
+      windResistance: 0,
+    };
+
+    const { windSpeed, grade, rollingResistance, windResistance } = {
+      ...defaults,
+      ...data,
+    };
+
     const writer = new DataViewWriter(1 + 2 + 2 + 1 + 1, true);
     writer.writeUint8(0x11);
     writer.writeInt16(windSpeed / 0.001);

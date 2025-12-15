@@ -2,32 +2,94 @@ import {
   ReadableGATTCharacteristicGateway,
   GATTCharacteristicGatewayDerived,
   GATTServiceGateway,
-  DecodedMessage,
   WriteableGATTCharacteristicGateway,
   DataViewReader,
   DataViewWriter,
   DecodedCharacteristicValueChangedEvent,
 } from './common.js';
 
+import { aTimeout } from '../util.js';
+import { BaseDecodedMessage } from './types.js';
+
+/*
+ * object Client Server
+ * Client->Server: Init 0x03-10
+ * Server->Client: Challenge 0x03-10-{C2}-{C1}
+ * Client->Server: Response 0x03-11-{R2}-{R1}
+ * Server->Client: Finished 0x03-11-(FE|FF)
+ *
+ * +---------+                        +---------+
+ * | Client  |                        | Server  |
+ * +---------+                        +---------+
+ *      |                                  |
+ *      | Init 0x03-10                     |
+ *      |--------------------------------->|
+ *      |                                  |
+ *      |      Challenge 0x03-10-{C2}-{C1} |
+ *      |<---------------------------------|
+ *      |                                  |
+ *      | Response 0x03-11-{R2}-{R1}       |
+ *      |--------------------------------->|
+ *      |                                  |
+ *      |         Finished 0x03-11-(FE|FF) |
+ *      |<---------------------------------|
+ *      |                                  |
+ */
+
+const UINT16MODULO = 65536;
+
 const calculateResponseCode = (challenge: number): number => {
   const n = challenge % 11;
-  const m = (challenge << n) | (challenge >> (16 - n));
-  const x = (challenge + 38550) ^ m;
+  const m = ((challenge << n) | (challenge >> (16 - n))) % UINT16MODULO;
+  const x = ((challenge + 38550) ^ m) % UINT16MODULO;
   return x % 65336;
 };
 
-type SteeringValue = {};
+export type SteeringValue = {
+  angle: number;
+};
+
+export type SteeringDataMessage = {
+  type: typeof SteeringDataGateway.characteristicLabel;
+  value: SteeringValue;
+} & BaseDecodedMessage;
+
+type HandshakeChallengeData = {
+  type: HandshakeOpCode.InitChallenge;
+  challenge: number;
+};
+
+type HandshakeFinishedData = {
+  type: HandshakeOpCode.ResponseFinished;
+  statusCode: StatusCode;
+};
+
+type HandshakeReadData = HandshakeChallengeData | HandshakeFinishedData;
+
+// TODO make this consistent
+type HandshakeChallengeMessage = {
+  type: HandshakeReadGateway['characteristicId'];
+  value: HandshakeChallengeData;
+  timeStamp: number;
+} & BaseDecodedMessage;
+
+enum HandshakeOpCode {
+  InitChallenge = 0x1003,
+  ResponseFinished = 0x1103,
+}
+
+enum StatusCode {
+  Accepted = 0xff,
+  Rejected = 0xfe,
+}
 
 export class SteeringServiceGateway extends GATTServiceGateway {
   // static serviceId = '347b0001-f315-4f60-9fb8-838830daea50';
   static serviceId = '347b0001-7635-408b-8918-8ff3949ce592';
   characteristicDefs: [string, GATTCharacteristicGatewayDerived][] = [
     [SteeringDataGateway.characteristicId, SteeringDataGateway],
-    [
-      HandshakeInitiateRespondGateway.characteristicId,
-      HandshakeInitiateRespondGateway,
-    ],
-    [HandshakeChallengeGateway.characteristicId, HandshakeChallengeGateway],
+    [HandshakeWriteGateway.characteristicId, HandshakeWriteGateway],
+    [HandshakeReadGateway.characteristicId, HandshakeReadGateway],
   ];
 
   get steeringDataP() {
@@ -37,18 +99,18 @@ export class SteeringServiceGateway extends GATTServiceGateway {
       ) as SteeringDataGateway)();
   }
 
-  get handshakeInitiateRequestP() {
+  get handshakeWrite() {
     return (async () =>
       (await this.characteristicsP).get(
-        HandshakeInitiateRespondGateway.characteristicId,
-      ) as HandshakeInitiateRespondGateway)();
+        HandshakeWriteGateway.characteristicId,
+      ) as HandshakeWriteGateway)();
   }
 
-  get handshakeChallengeP() {
+  get handshakeRead() {
     return (async () =>
       (await this.characteristicsP).get(
-        HandshakeChallengeGateway.characteristicId,
-      ) as HandshakeChallengeGateway)();
+        HandshakeReadGateway.characteristicId,
+      ) as HandshakeReadGateway)();
   }
 
   constructor() {
@@ -57,29 +119,53 @@ export class SteeringServiceGateway extends GATTServiceGateway {
   }
 
   async handshake() {
-    const handshakeInitiateRequest = await this.handshakeInitiateRequestP;
-    const handshakeChallenge = await this.handshakeChallengeP;
+    const handshakeWrite = await this.handshakeWrite;
+    const handshakeRead = await this.handshakeRead;
     const handshakeChallengeDataP = new Promise((resolve, reject) => {
-      handshakeChallenge.addEventListener(
+      handshakeRead.addEventListener(
         DecodedCharacteristicValueChangedEvent.type,
         (
           evt: DecodedCharacteristicValueChangedEvent<HandshakeChallengeMessage>,
         ) => {
-          console.log(evt.detail.message);
-          handshakeChallenge.characteristic.stopNotifications();
           resolve(evt.detail.message.value);
         },
+        { once: true },
       );
-      handshakeChallenge.characteristic.startNotifications();
+      handshakeRead.characteristic.startNotifications();
     });
-    handshakeInitiateRequest.initiateChallenge();
+
+    // Geriatric protocol
+    await aTimeout(500);
+    handshakeWrite.initiateChallenge();
     const handshakeChallengeData =
       (await handshakeChallengeDataP) as HandshakeChallengeData;
 
+    const handshakeFinishedDataP = new Promise((resolve, reject) => {
+      handshakeRead.addEventListener(
+        DecodedCharacteristicValueChangedEvent.type,
+        (
+          evt: DecodedCharacteristicValueChangedEvent<HandshakeChallengeMessage>,
+        ) => {
+          resolve(evt.detail.message.value);
+        },
+        { once: true },
+      );
+    });
     const responseCode = calculateResponseCode(
       handshakeChallengeData.challenge,
     );
-    handshakeInitiateRequest.responseToChallenge(responseCode);
+
+    await aTimeout(500);
+    handshakeWrite.respondToChallenge(responseCode);
+
+    const handshakeFinishedData =
+      (await handshakeFinishedDataP) as HandshakeFinishedData;
+
+    if (handshakeFinishedData.statusCode === StatusCode.Rejected) {
+      throw new Error('Handshake rejected');
+    } else {
+      console.log('Handshake finished');
+    }
   }
 }
 
@@ -88,8 +174,10 @@ export class SteeringDataGateway extends ReadableGATTCharacteristicGateway {
   static characteristicLabel = 'steering_data';
 
   static parseSteeringData(dataView: DataView): SteeringValue {
-    console.log([...new Uint8Array(dataView.buffer).values()]);
-    return {};
+    const angle = dataView.getFloat32(0, true);
+    return {
+      angle,
+    };
   }
 
   constructor(characteristic: BluetoothRemoteGATTCharacteristic) {
@@ -105,11 +193,11 @@ export class SteeringDataGateway extends ReadableGATTCharacteristicGateway {
   }
 }
 
-export class HandshakeInitiateRespondGateway extends WriteableGATTCharacteristicGateway {
+export class HandshakeWriteGateway extends WriteableGATTCharacteristicGateway {
   static characteristicId = '347b0031-7635-408b-8918-8ff3949ce592';
 
   constructor(characteristic: BluetoothRemoteGATTCharacteristic) {
-    super(characteristic, HandshakeInitiateRespondGateway.characteristicId);
+    super(characteristic, HandshakeWriteGateway.characteristicId);
   }
 
   initiateChallenge() {
@@ -118,7 +206,7 @@ export class HandshakeInitiateRespondGateway extends WriteableGATTCharacteristic
     );
   }
 
-  responseToChallenge(responseCode: number) {
+  respondToChallenge(responseCode: number) {
     const writer = new DataViewWriter(4 + 4, true);
     writer.writeUint8(0x03);
     writer.writeUint8(0x11);
@@ -129,38 +217,33 @@ export class HandshakeInitiateRespondGateway extends WriteableGATTCharacteristic
   }
 }
 
-type HandshakeChallengeData = {
-  opCode: number;
-  challenge: number;
-};
-
-// TODO make this consistent
-type HandshakeChallengeMessage = {
-  type: typeof HandshakeChallengeGateway['characteristicId'];
-  value: HandshakeChallengeData;
-  timeStamp: number;
-} & DecodedMessage;
-
-export class HandshakeChallengeGateway extends ReadableGATTCharacteristicGateway {
-  // static characteristicId = 'handshake_challenge';
-  // static characteristicUUID = '347b0032-7635-408b-8918-8ff3949ce592';
+export class HandshakeReadGateway extends ReadableGATTCharacteristicGateway {
   static characteristicId = '347b0032-7635-408b-8918-8ff3949ce592';
 
   constructor(characteristic: BluetoothRemoteGATTCharacteristic) {
-    super(characteristic, HandshakeChallengeGateway.characteristicId);
+    super(characteristic, HandshakeReadGateway.characteristicId);
   }
 
-  decodeValue(dataView: DataView): HandshakeChallengeData {
-    console.log([...new Uint8Array(dataView.buffer).values()]);
+  decodeValue(dataView: DataView): HandshakeReadData {
+    console.debug('HandshakeReadGateway.decodeValue', dataView);
     const reader = new DataViewReader(dataView, true);
 
-    const opCode = reader.readUint16();
-    const challenge = reader.readUint16();
-
-    console.log(opCode, challenge);
-    return {
-      opCode,
-      challenge,
-    };
+    const opCode: number = reader.readUint16();
+    switch (opCode) {
+      case HandshakeOpCode.InitChallenge:
+        const challenge = reader.readUint16();
+        return {
+          type: opCode,
+          challenge,
+        };
+      case HandshakeOpCode.ResponseFinished:
+        const statusCode: StatusCode = reader.readUint8();
+        return {
+          type: opCode,
+          statusCode,
+        };
+      default:
+        throw new Error(`Unknown op code: ${opCode.toString(16)}`);
+    }
   }
 }

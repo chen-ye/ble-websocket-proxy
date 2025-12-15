@@ -1,9 +1,9 @@
-import { cborEncoder, TypedCborStruct } from './cbor.js';
+import { cborDecoder, cborEncoder } from './cbor.js';
 import { HRSGateway, HRMMessage } from './ble/hrs.js';
 import { CyclingPowerServiceGateway, PowerMessage } from './ble/power.js';
 import { DecodedCharacteristicValueChangedEvent } from './ble/common.js';
 import { FTMSServiceGateway, IndoorBikeDataMessage } from './ble/ftms.js';
-import { SteeringServiceGateway } from './ble/sterzo.js';
+import { SteeringServiceGateway, SteeringDataMessage } from './ble/sterzo.js';
 
 const handleHRNotify = (
   evt: DecodedCharacteristicValueChangedEvent<HRMMessage>,
@@ -68,6 +68,20 @@ const handleFTMSNotify = (
     $ftmsCadenceFeedback.value =
       message.value.instantaneousCadence?.toString(10);
   }
+  // console.log(decode(cborEncoder.encode(message)));
+  ws.send(cborEncoder.encode(message));
+};
+
+const handleSteeringNotify = (
+  evt: DecodedCharacteristicValueChangedEvent<SteeringDataMessage>,
+) => {
+  const { message } = evt.detail;
+
+  console.info(message, Date.now());
+  if ($steeringFeedback) {
+    $steeringFeedback.value = message.value.angle?.toFixed(0);
+  }
+
   ws.send(cborEncoder.encode(message));
 };
 
@@ -127,6 +141,20 @@ $startFTMS?.addEventListener('click', async () => {
     handleFTMSNotify,
   );
   indoorBikeData.characteristic.startNotifications();
+
+  const controlPoint = await serviceGateway.fitnessMachineControlPointP;
+  await controlPoint.requestControl();
+
+  ws.addEventListener('message', async (evt) => {
+    const blob: Blob = evt.data;
+    const arrayBuffer = await blob.arrayBuffer();
+    const message = cborDecoder.decode(new Uint8Array(arrayBuffer));
+    if (message.type === 'indoor_bike_simulation') {
+      fitnessMachineControlPoint.setIndoorBikeSimulationParameters(
+        message.value,
+      );
+    }
+  });
 });
 
 const $startSteering = document.querySelector('#start-steering');
@@ -138,9 +166,9 @@ $startSteering?.addEventListener('click', async () => {
   const steeringData = await serviceGateway.steeringDataP;
   steeringData.addEventListener(
     DecodedCharacteristicValueChangedEvent.type,
-    (evt) => console.log(evt),
+    handleSteeringNotify,
   );
-  // steeringData.characteristic.startNotifications();
+  steeringData.characteristic.startNotifications();
 });
 
 const websocketURL = new URL('/ws/ble/', import.meta.url);

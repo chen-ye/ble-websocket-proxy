@@ -5,8 +5,8 @@
   "main": "index.js",
   "scripts": {
     "start": "npm-run-all --parallel start-ui start-wss",
-    "start-ui": "web-dev-server --open --node-resolve /static/",
-    "start-wss": "deno run --allow-net --allow-read ./server/main.ts",
+    "start-ui": "web-dev-server --port 8002 --open --node-resolve /static/",
+    "start-wss": "deno run --unstable --allow-net --allow-read ./server/main.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",

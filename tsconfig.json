@@ -5,5 +5,5 @@
     "target": "ES2022"
   },
   "include": ["static/**/*", "types/**/*"],
-  "exclude": ["server/**/*", "node_modules"]
+  "exclude": ["server/**/*", "node_modules", "static/lib/**/*"]
 }
